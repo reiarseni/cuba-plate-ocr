@@ -2,6 +2,7 @@
 
 import os
 import mimetypes
+import re
 import cv2
 import numpy as np
 import pytesseract
@@ -21,27 +22,40 @@ def classify_plate_type(imagen):
     """
     alto, ancho = imagen.shape[:2]
     aspect_ratio = ancho / float(alto)
-    # If aspect_ratio is quite wide, consider it a car plate
     if aspect_ratio > 2.0:
         return "car"
     else:
         return "motorcycle"
 
+def es_valida_chapa_car(texto):
+    """
+    Validates car plate text via regex:
+    One uppercase letter followed by exactly 6 digits.
+    """
+    pattern = r'^[A-Z]\d{6}$'
+    return re.match(pattern, texto) is not None
+
+def es_valida_chapa_moto(texto):
+    """
+    Validates motorcycle plate text via regex:
+    Exactly 5 digits.
+    """
+    pattern = r'^\d{5}$'
+    return re.match(pattern, texto) is not None
+
 def recortar_franja_central(imagen):
     alto, ancho = imagen.shape[:2]
     plate_type = classify_plate_type(imagen)
     if plate_type == "car":
-        # For car plates, keep original margins
-        recorte_superior = int(alto * 0.10)
-        recorte_inferior = int(alto * 0.10)
-        recorte_izquierda = int(ancho * 0.08)
-        recorte_derecha = int(ancho * 0.08)
+        recorte_superior = int(alto * 0.09)
+        recorte_inferior = int(alto * 0.09)
+        recorte_izquierda = int(ancho * 0.02)
+        recorte_derecha = int(ancho * 0.02)
     else:
-        # For motorcycle plates, adjust margins
-        recorte_superior = int(alto * 0.08)
-        recorte_inferior = int(alto * 0.08)
-        recorte_izquierda = int(ancho * 0.15)
-        recorte_derecha = int(ancho * 0.15)
+        recorte_superior = int(alto * 0.09)
+        recorte_inferior = int(alto * 0.09)
+        recorte_izquierda = int(ancho * 0.02)
+        recorte_derecha = int(ancho * 0.02)
 
     roi = imagen[
         recorte_superior:alto - recorte_inferior,
@@ -62,7 +76,7 @@ def limpiar_texto(texto):
     válidos para placas de Costa Rica (A-Z, 0-9 y guión).
     """
     texto = texto.upper().strip()
-    permitido = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"
+    permitido = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- "
     texto_filtrado = "".join([c for c in texto if c in permitido])
     return texto_filtrado
 
@@ -81,6 +95,9 @@ def reconocer_texto(imagen):
 # -----------------------------------------------------------------------------
 # PREPROCESADORES PARA IMAGEN INICIAL
 # -----------------------------------------------------------------------------
+def preprocesado_no_process(imagen):
+    return imagen
+
 def preprocesado_basico(imagen):
     """
     1. Escala de grises
@@ -149,6 +166,9 @@ def preprocesado_gaussiano(imagen):
 # PREPROCESADORES PARA IMAGEN FINAL (recortada/enderezada)
 #    - Se pueden repetir, pero con ligeras variaciones en parámetros
 # -----------------------------------------------------------------------------
+def preprocesado_no_process_final(imagen):
+    return imagen
+
 def preprocesado_basico_final(imagen):
     gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
     filtrado = cv2.bilateralFilter(gris, 11, 17, 17)
@@ -250,6 +270,7 @@ def main():
 
     # Definimos 5 preprocesadores para la imagen inicial
     preprocessors_initial = {
+        "NO_PROCESS": preprocesado_no_process,
         "BASICO": preprocesado_basico,
         "OTSU": preprocesado_otsu,
         "MORFOLOGICO": preprocesado_morfologico,
@@ -259,12 +280,21 @@ def main():
 
     # Definimos 5 preprocesadores para la imagen final (recortada/enderezada)
     preprocessors_final = {
+        "NO_PROCESS": preprocesado_no_process_final,
         "BASICO_FINAL": preprocesado_basico_final,
         "OTSU_FINAL": preprocesado_otsu_final,
         "MORFO_FINAL": preprocesado_morfologico_final,
         "RESIZE_FINAL": preprocesado_resize_final,
         "GAUSS_FINAL": preprocesado_gaussiano_final
     }
+
+    # Creamos carpeta "output" si no existe
+    output_root = "output"
+    os.makedirs(output_root, exist_ok=True)
+
+    # Variables para estadísticas
+    num_processed = 0
+    num_correct = 0
 
     # Recorremos todos los archivos de la carpeta
     for nombre_archivo in os.listdir(carpeta_imagenes):
@@ -284,24 +314,48 @@ def main():
             print(f"[ERROR] No se pudo cargar la imagen: {nombre_archivo}")
             continue
 
+        # Determinar tipo de placa
+        plate_type = classify_plate_type(imagen_original)
+        plate_label = "car" if plate_type == "car" else "motorcycle"
+
+        # Crear carpeta de salida para esta placa
+        plate_output_dir = os.path.join(output_root, texto_esperado)
+        os.makedirs(plate_output_dir, exist_ok=True)
+
+        # Log del tipo de placa
+        print(f"\nProcessing {nombre_archivo} (Plate type: {plate_label})")
+
         # ---------------------------------------------------------------------
-        # PRIMERO, PROBAMOS PREPROCESADORES EN LA IMAGEN INICIAL (SIN RECORTAR)
+        # PRIMERO, PROBAMOS PREPROCESADORES EN LA IMAGEN INICIAL (RECORTADA)
         # ---------------------------------------------------------------------
+        candidatos_inicial = []
         mejor_texto_inicial = None
         mejor_sim_inicial = 0.0
         mejor_metodo_inicial = None
 
-        for nombre_metodo, funcion in preprocessors_initial.items():
-            # aqui la recortamos desde el inicio
-            imagen_recortada = recortar_franja_central(imagen_original)
+        # Recortamos la franja central antes de procesar
+        imagen_recortada = recortar_franja_central(imagen_original)
 
-            # Preprocesar
+        for nombre_metodo, funcion in preprocessors_initial.items():
             img_preproc = funcion(imagen_recortada)
-            # OCR
             texto_inferido = reconocer_texto(img_preproc)
-            print(funcion , "->" , texto_inferido)
-            # Similaridad
+
+            # Chequear validez según tipo de placa
+            if plate_type == "car":
+                is_valid = es_valida_chapa_car(texto_inferido)
+            else:
+                is_valid = es_valida_chapa_moto(texto_inferido)
+
             sim = text_similarity(texto_inferido, texto_esperado)
+
+            # Log de cada método
+            print(f"[INITIAL: {nombre_metodo}] -> recognized: '{texto_inferido}', sim={sim:.3f}, valid={is_valid}")
+
+            candidatos_inicial.append(texto_inferido)
+
+            # Guardar la imagen preprocesada
+            out_filename = f"{nombre_metodo}_initial.png"
+            cv2.imwrite(os.path.join(plate_output_dir, out_filename), img_preproc)
 
             if sim > mejor_sim_inicial:
                 mejor_sim_inicial = sim
@@ -311,19 +365,17 @@ def main():
         # ---------------------------------------------------------------------
         # DETECTAMOS Y RECORTAMOS LA PLACA (O HACEMOS PERSPECTIVA)
         # ---------------------------------------------------------------------
-        # Podemos usar algún preprocesado simple para contornos
-        img_bin = preprocesado_otsu(imagen_original)  # O el que prefieras
+        img_bin = preprocesado_otsu(imagen_original)  # para contornos
         contorno_placa = encontrar_contorno_placa(img_bin)
-
         if contorno_placa is not None:
             imagen_placa = transformar_perspectiva(imagen_original, contorno_placa)
         else:
-            # Si no se encontró contorno, usar la original como "final"
             imagen_placa = imagen_original
 
         # ---------------------------------------------------------------------
         # LUEGO, PROBAMOS PREPROCESADORES EN LA IMAGEN FINAL (RECORTADA)
         # ---------------------------------------------------------------------
+        candidatos_final = []
         mejor_texto_final = None
         mejor_sim_final = 0.0
         mejor_metodo_final = None
@@ -331,9 +383,23 @@ def main():
         for nombre_metodo, funcion in preprocessors_final.items():
             img_preproc_final = funcion(imagen_placa)
             texto_inferido_final = reconocer_texto(img_preproc_final)
+
+            # Chequear validez según tipo de placa
+            if plate_type == "car":
+                is_valid = es_valida_chapa_car(texto_inferido_final)
+            else:
+                is_valid = es_valida_chapa_moto(texto_inferido_final)
+
             sim_final = text_similarity(texto_inferido_final, texto_esperado)
 
-            print(funcion, "->", texto_inferido_final)
+            # Log de cada método
+            print(f"[FINAL: {nombre_metodo}] -> recognized: '{texto_inferido_final}', sim={sim_final:.3f}, valid={is_valid}")
+
+            candidatos_final.append(texto_inferido_final)
+
+            # Guardar la imagen preprocesada final
+            out_filename = f"{nombre_metodo}_final.png"
+            cv2.imwrite(os.path.join(plate_output_dir, out_filename), img_preproc_final)
 
             if sim_final > mejor_sim_final:
                 mejor_sim_final = sim_final
@@ -341,21 +407,54 @@ def main():
                 mejor_metodo_final = nombre_metodo
 
         # ---------------------------------------------------------------------
-        # COMPARAR RESULTADOS: INICIAL vs FINAL
+        # CONSENSO FINAL: VALIDACIÓN Y SELECCIÓN
         # ---------------------------------------------------------------------
-        # Elegimos el que tenga mayor similitud global
-        if mejor_sim_inicial >= mejor_sim_final:
-            print(f"\n[IMAGEN: {nombre_archivo}]")
-            print(f"  > Mejor método (INICIAL): {mejor_metodo_inicial}")
-            print(f"  > Texto inferido: {mejor_texto_inicial}")
-            print(f"  > Texto esperado: {texto_esperado}")
-            print(f"  > Similitud: {mejor_sim_inicial:.3f}")
+        # Reunimos todos los resultados
+        todos_candidatos = candidatos_inicial + candidatos_final
+
+        # Validamos según el tipo de placa
+        if plate_type == "car":
+            validos = [c for c in todos_candidatos if es_valida_chapa_car(c)]
         else:
+            validos = [c for c in todos_candidatos if es_valida_chapa_moto(c)]
+
+        # Determinamos el resultado final
+        if not validos:
+            if mejor_sim_inicial >= mejor_sim_final:
+                resultado_final = mejor_texto_inicial
+                print(f"\n[IMAGEN: {nombre_archivo}]")
+                print(f"  > Mejor método (INICIAL): {mejor_metodo_inicial}")
+                print(f"  > Texto inferido: {resultado_final}")
+                print(f"  > Texto esperado: {texto_esperado}")
+                print(f"  > Similitud: {mejor_sim_inicial:.3f}")
+            else:
+                resultado_final = mejor_texto_final
+                print(f"\n[IMAGEN: {nombre_archivo}]")
+                print(f"  > Mejor método (FINAL): {mejor_metodo_final}")
+                print(f"  > Texto inferido: {resultado_final}")
+                print(f"  > Texto esperado: {texto_esperado}")
+                print(f"  > Similitud: {mejor_sim_final:.3f}")
+        else:
+            frecuencia = {}
+            for v in validos:
+                frecuencia[v] = frecuencia.get(v, 0) + 1
+            resultado_final = max(frecuencia, key=frecuencia.get)
             print(f"\n[IMAGEN: {nombre_archivo}]")
-            print(f"  > Mejor método (FINAL): {mejor_metodo_final}")
-            print(f"  > Texto inferido: {mejor_texto_final}")
+            print("  > Resultados válidos:", validos)
+            print(f"  > Mejor método: {mejor_metodo_final}")
+            print(f"  > Texto inferido: {resultado_final}")
             print(f"  > Texto esperado: {texto_esperado}")
             print(f"  > Similitud: {mejor_sim_final:.3f}")
+
+        # Actualizar estadísticas
+        if resultado_final == texto_esperado:
+            num_correct += 1
+        num_processed += 1
+
+    # Al final de todo, mostrar porcentaje de acierto
+    if num_processed > 0:
+        accuracy = (num_correct / num_processed) * 100
+        print(f"\nPorcentaje general de acierto: {accuracy:.2f}%")
 
 if __name__ == "__main__":
     main()
