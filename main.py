@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import mimetypes
 import cv2
@@ -7,22 +9,44 @@ from difflib import SequenceMatcher
 
 # Configuración de Tesseract PSM (Page Segmentation Mode).
 # Para placas, a veces PSM 6, 7 u 8 funcionan bien. Puedes experimentar.
-PSM_VALUE = 8
+PSM_VALUE = 6
 
 # -----------------------------------------------------------------------------
 # UTILIDADES
 # -----------------------------------------------------------------------------
+def classify_plate_type(imagen):
+    """
+    Simple heuristic to classify the plate type based on aspect ratio.
+    Returns 'car' or 'motorcycle'.
+    """
+    alto, ancho = imagen.shape[:2]
+    aspect_ratio = ancho / float(alto)
+    # If aspect_ratio is quite wide, consider it a car plate
+    if aspect_ratio > 2.0:
+        return "car"
+    else:
+        return "motorcycle"
+
 def recortar_franja_central(imagen):
     alto, ancho = imagen.shape[:2]
-    # Calcular el 20% de la altura de la imagen
-    recorte_superior = int(alto * 0.18)
-    recorte_inferior = int(alto * 0.18)
+    plate_type = classify_plate_type(imagen)
+    if plate_type == "car":
+        # For car plates, keep original margins
+        recorte_superior = int(alto * 0.10)
+        recorte_inferior = int(alto * 0.10)
+        recorte_izquierda = int(ancho * 0.08)
+        recorte_derecha = int(ancho * 0.08)
+    else:
+        # For motorcycle plates, adjust margins
+        recorte_superior = int(alto * 0.08)
+        recorte_inferior = int(alto * 0.08)
+        recorte_izquierda = int(ancho * 0.15)
+        recorte_derecha = int(ancho * 0.15)
 
-    recorte_izquierda = int(ancho * 0.10)
-    recorte_derecha = int(ancho * 0.10)
-
-    # Recortar la imagen: eliminar el 20% superior e inferior
-    roi = imagen[recorte_superior:alto - recorte_inferior, 0+recorte_izquierda:ancho-recorte_derecha]
+    roi = imagen[
+        recorte_superior:alto - recorte_inferior,
+        recorte_izquierda:ancho - recorte_derecha
+    ]
     return roi
 
 def text_similarity(text1, text2):
@@ -45,7 +69,7 @@ def limpiar_texto(texto):
 def reconocer_texto(imagen):
     """
     Aplica Tesseract OCR a una imagen, usando la configuración:
-      --oem 3, --psm PSM_VALUE, y whitelist de caracteres.
+      --oem 3 --psm PSM_VALUE, y whitelist de caracteres.
     """
     config_tesseract = (
         f"--oem 3 --psm {PSM_VALUE} "
@@ -191,7 +215,6 @@ def ordenar_puntos(pts):
     return rect
 
 def transformar_perspectiva(imagen, contorno):
-
     try:
         pts = contorno.reshape(4, 2)
     except Exception as err:
@@ -269,7 +292,6 @@ def main():
         mejor_metodo_inicial = None
 
         for nombre_metodo, funcion in preprocessors_initial.items():
-
             # aqui la recortamos desde el inicio
             imagen_recortada = recortar_franja_central(imagen_original)
 
