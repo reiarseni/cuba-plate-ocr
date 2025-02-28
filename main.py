@@ -262,6 +262,15 @@ def transformar_perspectiva(imagen, contorno):
     warped = cv2.warpPerspective(imagen, M, (max_ancho, max_alto))
     return warped
 
+def recortar_cadena(cadena, length):
+    """
+    Si la cadena tiene más de "length" caracteres,
+    conserva solo los últimos "length".
+    """
+    if len(cadena) > length:
+        return cadena[-length:]
+    return cadena
+
 # -----------------------------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------------------------
@@ -440,6 +449,7 @@ def main():
                 frecuencia[v] = frecuencia.get(v, 0) + 1
             resultado_final = max(frecuencia, key=frecuencia.get)
             print(f"\n[IMAGEN: {nombre_archivo}]")
+            print(f"  > Plate type: {plate_type}")
             print("  > Resultados válidos:", validos)
             print(f"  > Mejor método: {mejor_metodo_final}")
             print(f"  > Texto inferido: {resultado_final}")
