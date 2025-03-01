@@ -352,8 +352,10 @@ def main():
 
             # Chequear validez según tipo de placa
             if plate_type == "car":
+                texto_inferido = recortar_cadena(texto_inferido, 7)
                 is_valid = es_valida_chapa_car(texto_inferido)
             else:
+                texto_inferido = recortar_cadena(texto_inferido, 5)
                 is_valid = es_valida_chapa_moto(texto_inferido)
 
             sim = text_similarity(texto_inferido, texto_esperado)
@@ -394,10 +396,14 @@ def main():
             img_preproc_final = funcion(imagen_placa)
             texto_inferido_final = reconocer_texto(img_preproc_final)
 
+            #Si tiene mas de 7 caracteres se eliminan los que sobran al principio
+
             # Chequear validez según tipo de placa
             if plate_type == "car":
+                texto_inferido_final = recortar_cadena(texto_inferido_final,7)
                 is_valid = es_valida_chapa_car(texto_inferido_final)
             else:
+                texto_inferido_final = recortar_cadena(texto_inferido_final, 5)
                 is_valid = es_valida_chapa_moto(texto_inferido_final)
 
             sim_final = text_similarity(texto_inferido_final, texto_esperado)
