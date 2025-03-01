@@ -292,7 +292,6 @@ def main():
         "NO_PROCESS": preprocesado_no_process_final,
         "BASICO_FINAL": preprocesado_basico_final,
         "OTSU_FINAL": preprocesado_otsu_final,
-        "MORFO_FINAL": preprocesado_morfologico_final,
         "RESIZE_FINAL": preprocesado_resize_final,
         "GAUSS_FINAL": preprocesado_gaussiano_final
     }
