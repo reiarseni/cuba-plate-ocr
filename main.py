@@ -64,6 +64,8 @@ def recortar_franja_central(imagen):
     return roi
 
 def text_similarity(text1, text2):
+    if text1 == None or text2 == None:
+        return 0.0
     """
     Calcula la similitud (entre 0.0 y 1.0) entre dos textos
     usando SequenceMatcher de difflib.
