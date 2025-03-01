@@ -438,30 +438,35 @@ def main():
         if not validos:
             if mejor_sim_inicial >= mejor_sim_final:
                 resultado_final = mejor_texto_inicial
+                sim = text_similarity(resultado_final, texto_esperado)
                 print(f"\n[IMAGEN: {nombre_archivo}]")
+                print(f"  > Plate type: {plate_type}")
                 print(f"  > Mejor método (INICIAL): {mejor_metodo_inicial}")
                 print(f"  > Texto inferido: {resultado_final}")
                 print(f"  > Texto esperado: {texto_esperado}")
-                print(f"  > Similitud: {mejor_sim_inicial:.3f}")
+                print(f"  > Similitud: {sim:.3f}")
             else:
                 resultado_final = mejor_texto_final
+                sim = text_similarity(resultado_final, texto_esperado)
                 print(f"\n[IMAGEN: {nombre_archivo}]")
+                print(f"  > Plate type: {plate_type}")
                 print(f"  > Mejor método (FINAL): {mejor_metodo_final}")
                 print(f"  > Texto inferido: {resultado_final}")
                 print(f"  > Texto esperado: {texto_esperado}")
-                print(f"  > Similitud: {mejor_sim_final:.3f}")
+                print(f"  > Similitud: {sim:.3f}")
         else:
             frecuencia = {}
             for v in validos:
                 frecuencia[v] = frecuencia.get(v, 0) + 1
             resultado_final = max(frecuencia, key=frecuencia.get)
+            sim = text_similarity(resultado_final, texto_esperado)
             print(f"\n[IMAGEN: {nombre_archivo}]")
             print(f"  > Plate type: {plate_type}")
             print("  > Resultados válidos:", validos)
             print(f"  > Mejor método: {mejor_metodo_final}")
             print(f"  > Texto inferido: {resultado_final}")
             print(f"  > Texto esperado: {texto_esperado}")
-            print(f"  > Similitud: {mejor_sim_final:.3f}")
+            print(f"  > Similitud: {sim:.3f}")
 
         # Actualizar estadísticas
         if resultado_final == texto_esperado:
