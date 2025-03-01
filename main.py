@@ -164,6 +164,38 @@ def preprocesado_gaussiano(imagen):
     _, umbral = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return umbral
 
+def clahe(img: np.ndarray) -> np.ndarray:
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    clahe_img = clahe.apply(l)
+    updated_lab_img2 = cv2.merge((clahe_img, a, b))
+    CLAHE_img = cv2.cvtColor(updated_lab_img2, cv2.COLOR_LAB2BGR)
+    return CLAHE_img
+
+def exposure_level(hist: np.ndarray) -> str:
+    hist = hist / np.sum(hist)
+    percent_over = np.sum(hist[200:])
+    percent_under = np.sum(hist[:50])
+    if percent_over > 0.75:
+        return "Overexposed"
+    elif percent_under > 0.75:
+        return "Underexposed"
+    else:
+        return "Properly exposed"
+
+def preprocesado_image_contrast(img: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    if exposure_level(hist) == "Overexposed" or "Underexposed":
+        img = clahe(img)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    contrast = cv2.Laplacian(gray, cv2.CV_64F).var()  # type: ignore
+    if contrast < 100:
+        img = cv2.equalizeHist(gray)
+    return img
+
 # -----------------------------------------------------------------------------
 # PREPROCESADORES PARA IMAGEN FINAL (recortada/enderezada)
 #    - Se pueden repetir, pero con ligeras variaciones en parámetros
@@ -286,7 +318,8 @@ def main():
         "OTSU": preprocesado_otsu,
         "MORFOLOGICO": preprocesado_morfologico,
         "RESIZE": preprocesado_resize,
-        "GAUSSIANO": preprocesado_gaussiano
+        "GAUSSIANO": preprocesado_gaussiano,
+        "CONTRAST": preprocesado_image_contrast
     }
 
     # Definimos 5 preprocesadores para la imagen final (recortada/enderezada)
